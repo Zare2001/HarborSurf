@@ -1,0 +1,12 @@
+# Ansible inventory for Harbor deployment
+# Copy to inventory.ini and update with your server details
+#
+# Usage: ansible-playbook -i inventory.ini ansible-playbook.yml
+
+[harbor_servers]
+# Replace with your server IP or hostname
+harbor-server ansible_host=192.168.1.100 ansible_user=ubuntu
+
+[all:vars]
+# Optional: use SSH key
+# ansible_ssh_private_key_file=~/.ssh/id_rsa

@@ -1,0 +1,79 @@
+---
+# Ansible Playbook - Deploy Harbor Container Registry to a server
+# Usage: ansible-playbook -i inventory.ini ansible-playbook.yml -e "harbor_hostname=192.168.1.100"
+#
+# Create inventory.ini:
+#   [harbor_servers]
+#   your-server ansible_host=192.168.1.100 ansible_user=ubuntu
+#
+# Run: ansible-playbook -i inventory.ini ansible-playbook.yml -e "harbor_hostname=192.168.1.100"
+
+- name: Deploy Harbor Container Registry
+  hosts: harbor_servers
+  become: yes
+  vars:
+    harbor_version: "v2.13.0"
+    harbor_hostname: "{{ hostvars[inventory_hostname]['ansible_host'] | default(inventory_hostname) }}"
+    harbor_install_dir: "/opt/harbor"
+
+  pre_tasks:
+    - name: Check Docker is installed
+      command: docker --version
+      register: docker_check
+      failed_when: docker_check.rc != 0
+      changed_when: false
+
+    - name: Check Docker Compose is installed
+      command: docker compose version
+      register: compose_check
+      failed_when: compose_check.rc != 0
+      changed_when: false
+
+  tasks:
+    - name: Create Harbor install directory
+      file:
+        path: "{{ harbor_install_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download Harbor installer
+      get_url:
+        url: "https://github.com/goharbor/harbor/releases/download/{{ harbor_version }}/harbor-online-installer-{{ harbor_version }}.tgz"
+        dest: "{{ harbor_install_dir }}/harbor-installer.tgz"
+        mode: "0644"
+
+    - name: Extract Harbor installer
+      unarchive:
+        src: "{{ harbor_install_dir }}/harbor-installer.tgz"
+        dest: "{{ harbor_install_dir }}"
+        remote_src: yes
+        creates: "{{ harbor_install_dir }}/harbor/install.sh"
+
+    - name: Copy harbor.yml template
+      template:
+        src: templates/harbor.yml.j2
+        dest: "{{ harbor_install_dir }}/harbor/harbor.yml"
+      vars:
+        harbor_hostname: "{{ harbor_hostname }}"
+
+    - name: Run Harbor prepare
+      command: ./prepare
+      args:
+        chdir: "{{ harbor_install_dir }}/harbor"
+        creates: "{{ harbor_install_dir }}/harbor/docker-compose.yml"
+
+    - name: Install Harbor
+      command: ./install.sh
+      args:
+        chdir: "{{ harbor_install_dir }}/harbor"
+      register: harbor_install
+      changed_when: harbor_install.rc == 0
+
+    - name: Display Harbor access info
+      debug:
+        msg:
+          - "Harbor installed at http://{{ harbor_hostname }}"
+          - "Default login: admin / Harbor12345"
+          - "For HTTP: Add to /etc/docker/daemon.json: insecure-registries: [{{ harbor_hostname }}]"
+          - "Then: systemctl restart docker"
+          - "Push images: docker login {{ harbor_hostname }}"
