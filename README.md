@@ -151,6 +151,8 @@ So the link is **`https://your-domain`** without browser warnings (or with a tru
 2. In `harbor.yml`, use `https:` with `certificate` and `private_key`; comment out or adjust `http:` as per docs.
 3. Run `./prepare`, then `docker compose down -v` and `docker compose up -d`.
 
+**Step-by-step in this repo:** see **[HTTPS.md](HTTPS.md)** (Let’s Encrypt, self-signed SAN for IP, `certs.d`, prepare/compose).
+
 ---
 
 ## Requirements
