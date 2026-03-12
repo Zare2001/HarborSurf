@@ -1,12 +1,11 @@
 ---
-# Ansible Playbook - Deploy Harbor Container Registry to a server
-# Usage: ansible-playbook -i inventory.ini ansible-playbook.yml -e "harbor_hostname=192.168.1.100"
+# Ansible Playbook - Deploy Harbor Container Registry (Research Cloud / SURF)
+# Component type: Ansible Playbook | Path: ansible-playbook.yml
 #
-# Create inventory.ini:
-#   [harbor_servers]
-#   your-server ansible_host=192.168.1.100 ansible_user=ubuntu
+# Usage:
+#   ansible-playbook -i inventory.ini ansible-playbook.yml -e "harbor_hostname=YOUR_PUBLIC_IP"
 #
-# Run: ansible-playbook -i inventory.ini ansible-playbook.yml -e "harbor_hostname=192.168.1.100"
+# harbor_hostname must be the IP/hostname clients use in the browser (not 127.0.0.1).
 
 - name: Deploy Harbor Container Registry
   hosts: harbor_servers
@@ -36,6 +35,36 @@
         state: directory
         mode: "0755"
 
+    # So docker login/push on THIS host works over HTTP (avoids :443 connection refused)
+    - name: Merge insecure-registries for Harbor hostname (HTTP)
+      shell: |
+        python3 << 'PY'
+        import json, os
+        path = "/etc/docker/daemon.json"
+        host = "{{ harbor_hostname }}"
+        if os.path.exists(path):
+            with open(path) as f:
+                try:
+                    d = json.load(f)
+                except json.JSONDecodeError:
+                    d = {}
+        else:
+            d = {}
+        if not isinstance(d, dict):
+            d = {}
+        if "insecure-registries" not in d or not isinstance(d["insecure-registries"], list):
+            d["insecure-registries"] = []
+        if host not in d["insecure-registries"]:
+            d["insecure-registries"].append(host)
+        with open(path, "w") as f:
+            json.dump(d, f, indent=2)
+        PY
+      args:
+        executable: /bin/bash
+      register: daemon_merge
+      changed_when: true
+      notify: Restart docker
+
     - name: Download Harbor installer
       get_url:
         url: "https://github.com/goharbor/harbor/releases/download/{{ harbor_version }}/harbor-online-installer-{{ harbor_version }}.tgz"
@@ -49,7 +78,7 @@
         remote_src: yes
         creates: "{{ harbor_install_dir }}/harbor/install.sh"
 
-    - name: Copy harbor.yml template
+    - name: Copy harbor.yml template (HTTP-only, no https without certs)
       template:
         src: templates/harbor.yml.j2
         dest: "{{ harbor_install_dir }}/harbor/harbor.yml"
@@ -60,7 +89,7 @@
       command: ./prepare
       args:
         chdir: "{{ harbor_install_dir }}/harbor"
-        creates: "{{ harbor_install_dir }}/harbor/docker-compose.yml"
+      # Omit creates: so hostname changes re-run prepare; first run always executes.
 
     - name: Install Harbor
       command: ./install.sh
@@ -69,14 +98,17 @@
       register: harbor_install
       changed_when: harbor_install.rc == 0
 
-    # Optional: merge insecure-registries manually if docker login on server fails with :443 refused
-    # echo '{"insecure-registries":["HOST"]}' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker
-
     - name: Display Harbor access info
       debug:
         msg:
-          - "Harbor installed at http://{{ harbor_hostname }}"
-          - "Default login: admin / Harbor12345"
-          - "For HTTP: Add to /etc/docker/daemon.json: insecure-registries: [{{ harbor_hostname }}]"
-          - "Then: systemctl restart docker"
-          - "Push images: docker login {{ harbor_hostname }}"
+          - "Harbor UI: http://{{ harbor_hostname }}"
+          - "Login: admin / Harbor12345 (change in UI)"
+          - "Image tag (no http://): {{ harbor_hostname }}/<project>/<repo>:<tag>"
+          - "On this host: docker login {{ harbor_hostname }} should use HTTP now."
+          - "From Mac/Colima: use push-via-ssh.sh or enable HTTPS on Harbor."
+
+  handlers:
+    - name: Restart docker
+      service:
+        name: docker
+        state: restarted

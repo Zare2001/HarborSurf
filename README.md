@@ -63,7 +63,29 @@ Then open `http://<harbor_hostname>` in a browser.
 | Type | Use |
 |------|-----|
 | **Ansible Playbook** | `ansible-playbook.yml` |
-| **Docker Compose** | Installer generates `docker-compose.yml`; no static compose in repo |
+| **Docker Compose** | Not used — Harbor is installed by `prepare`/`install.sh` (unlike [plugin-vantage](https://gitlab.com/rsc-surf-nl/plugins/plugin-vantage) which ships a static `docker-compose.yml`). |
+
+### Compared to plugin-vantage (working SURF plugin)
+
+| plugin-vantage | HarborSurf |
+|----------------|------------|
+| **Docker Compose** at repo root | **Ansible** drives Harbor installer |
+| Images from **HTTPS** registry → no insecure-registry on clients | Harbor **HTTP** → playbook + **init.sh** add `insecure-registries` on the **host** so `docker login` works there |
+| **`init.sh`** patches nginx on host | **`init.sh`** merges `insecure-registries` into `/etc/docker/daemon.json` and restarts Docker |
+
+**Path in RC wizard:** `ansible-playbook.yml`  
+**Parameters:** `harbor_hostname` = **Fixed** to your workspace public IP; `harbor_version` = **Fixed** e.g. `v2.13.0`.
+
+### init.sh (host prep, like vantage’s init)
+
+Before or after Ansible, on the **server** as root:
+
+```bash
+sudo chmod +x init.sh
+sudo HARBOR_HOSTNAME=YOUR_PUBLIC_IP ./init.sh
+```
+
+The **Ansible playbook** now runs the same merge **before** `install.sh`, so `docker login YOUR_IP` on the Harbor host should work without manual daemon.json edits.
 
 ---
 
