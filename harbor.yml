@@ -59,7 +59,8 @@ log:
     rotate_size: 200M
     location: /var/log/harbor
 
-_version: 2.13.0
+# Must match installer version after prepare (see https://goharbor.io/docs/2.14.0/install-config/configure-yml-file/)
+_version: 2.14.0
 
 upload_purging:
   enabled: true

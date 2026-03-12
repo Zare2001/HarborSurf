@@ -1,0 +1,7 @@
+# Harbor installer artifacts
+harbor-install/
+*.tgz
+
+# Ansible
+inventory.ini
+*.retry

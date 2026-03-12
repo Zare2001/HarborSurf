@@ -12,7 +12,7 @@
   hosts: harbor_servers
   become: yes
   vars:
-    harbor_version: "v2.13.0"
+    harbor_version: "v2.14.0"
     harbor_hostname: "{{ hostvars[inventory_hostname]['ansible_host'] | default(inventory_hostname) }}"
     harbor_install_dir: "/opt/harbor"
 
@@ -68,6 +68,9 @@
         chdir: "{{ harbor_install_dir }}/harbor"
       register: harbor_install
       changed_when: harbor_install.rc == 0
+
+    # Optional: merge insecure-registries manually if docker login on server fails with :443 refused
+    # echo '{"insecure-registries":["HOST"]}' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker
 
     - name: Display Harbor access info
       debug:

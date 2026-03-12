@@ -2,15 +2,22 @@
 # Harbor Setup Script - Downloads and installs Harbor container registry
 # Usage: ./setup-harbor.sh [SERVER_IP]
 # Example: ./setup-harbor.sh 192.168.1.100
+#
+# Run on the SERVER where Docker runs (not on Mac without Colima/Docker).
+# Do not use 127.0.0.1 or localhost as hostname.
 
 set -e
 
-HARBOR_VERSION="${HARBOR_VERSION:-v2.13.0}"
-INSTALL_DIR="${INSTALL_DIR:-./harbor-install}"
+HARBOR_VERSION="${HARBOR_VERSION:-v2.14.0}"
 SERVER_IP="${1:-}"
+
+# Absolute install dir next to this script (avoids cp same-file when harbor.yml is linked into extract tree)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="${INSTALL_DIR:-$SCRIPT_DIR/harbor-install}"
 
 echo "=== Harbor Container Registry Setup ==="
 echo "Harbor version: $HARBOR_VERSION"
+echo "Install dir: $INSTALL_DIR"
 echo ""
 
 # Check prerequisites
@@ -34,10 +41,14 @@ if [ -z "$SERVER_IP" ]; then
     fi
 fi
 
+if [ "$SERVER_IP" = "127.0.0.1" ] || [ "$SERVER_IP" = "localhost" ]; then
+    echo "Error: Do not use 127.0.0.1 or localhost. Use the IP/hostname clients use (e.g. 145.38.205.248)."
+    exit 1
+fi
+
 echo "Using hostname: $SERVER_IP"
 echo ""
 
-# Create install directory
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
@@ -54,32 +65,44 @@ echo "Extracting..."
 tar xzvf harbor-installer.tgz
 cd harbor
 
-# Copy and configure harbor.yml
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "$SCRIPT_DIR/harbor.yml" ]; then
-    cp "$SCRIPT_DIR/harbor.yml" harbor.yml
-    # Replace placeholder with actual server IP (macOS/BSD and Linux compatible)
+HARBOR_YML="$(pwd)/harbor.yml"
+
+# Copy harbor.yml without triggering "same file" cp error (use cat to always write a new inode)
+apply_hostname_sed() {
+    local f="$1"
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/YOUR_SERVER_IP/$SERVER_IP/g" harbor.yml
+        sed -i '' "s/YOUR_SERVER_IP/$SERVER_IP/g" "$f"
+        sed -i '' "s/reg.mydomain.com/$SERVER_IP/g" "$f"
     else
-        sed -i "s/YOUR_SERVER_IP/$SERVER_IP/g" harbor.yml
+        sed -i "s/YOUR_SERVER_IP/$SERVER_IP/g" "$f"
+        sed -i "s/reg.mydomain.com/$SERVER_IP/g" "$f"
     fi
+}
+
+if [ -f "$SCRIPT_DIR/harbor.yml" ]; then
+    echo "Using harbor.yml from $SCRIPT_DIR"
+    cat "$SCRIPT_DIR/harbor.yml" > "$HARBOR_YML"
+    apply_hostname_sed "$HARBOR_YML"
     echo "Configured harbor.yml with hostname: $SERVER_IP"
 else
-    echo "Warning: harbor.yml not found in script directory. Using default."
-    cp harbor.yml.tmpl harbor.yml
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        sed -i '' "s/reg.mydomain.com/$SERVER_IP/g" harbor.yml
-    else
-        sed -i "s/reg.mydomain.com/$SERVER_IP/g" harbor.yml
+    echo "Warning: harbor.yml not found in script directory. Using template (HTTP-only patch)."
+    cp harbor.yml.tmpl "$HARBOR_YML"
+    apply_hostname_sed "$HARBOR_YML"
+    # Prepare fails if https is enabled without certificate paths - force HTTP only
+    if grep -q '^https:' "$HARBOR_YML" 2>/dev/null; then
+        echo "Stripping active https block for HTTP-only install (avoid ssl_cert error)..."
+        # Comment out lines from ^https: through private_key line (template layout)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' '/^https:/,/private_key:/s/^/# /' "$HARBOR_YML"
+        else
+            sed -i '/^https:/,/private_key:/s/^/# /' "$HARBOR_YML"
+        fi
     fi
 fi
 
-# Run prepare (generates docker-compose from harbor.yml)
 echo "Running Harbor prepare..."
 sudo ./prepare
 
-# Install Harbor (without Trivy for faster install - add --with-trivy for vulnerability scanning)
 echo "Installing Harbor..."
 sudo ./install.sh
 
@@ -88,11 +111,16 @@ echo "=== Harbor installed successfully! ==="
 echo "Access Harbor at: http://$SERVER_IP"
 echo "Default login: admin / Harbor12345"
 echo ""
-echo "For HTTP registry, add to Docker daemon (/etc/docker/daemon.json):"
-echo '  "insecure-registries": ["'"$SERVER_IP"'"]'
-echo "Then restart Docker: systemctl restart docker"
+echo "Image tag format (no http://):"
+echo "  $SERVER_IP/<project>/<repo>:<tag>"
 echo ""
-echo "Push images:"
+echo "Docker daemon (server + clients using HTTP): /etc/docker/daemon.json"
+echo '  "insecure-registries": ["'"$SERVER_IP"'"]'
+echo "Then: sudo systemctl restart docker   (on server)"
+echo ""
+echo "Colima (Mac): daemon.json is inside the VM; see README push-via-ssh.sh"
+echo ""
+echo "Push from server after login:"
 echo "  docker login $SERVER_IP"
-echo "  docker tag myimage $SERVER_IP/library/myimage"
-echo "  docker push $SERVER_IP/library/myimage"
+echo "  docker tag myimage $SERVER_IP/myproject/myimage:latest"
+echo "  docker push $SERVER_IP/myproject/myimage:latest"
