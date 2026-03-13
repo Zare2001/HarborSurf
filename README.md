@@ -118,22 +118,6 @@ If `docker login` hits **port 443** and gets **connection refused**, the daemon 
   then `sudo systemctl restart docker`.
 - **Colima on Mac:** Colima overwrites `/etc/docker/daemon.json` on start. Either merge `insecure-registries` **inside** the VM after each `colima start`, or use **push-via-ssh** below.
 
-### Push without fixing Colima (save | ssh | load | push)
-
-On the server, set `insecure-registries` once, then:
-
-```bash
-chmod +x push-via-ssh.sh
-HARBOR_PROJECT=demo HARBOR_REPO=20klogregchallenge ./push-via-ssh.sh /path/to/Dockerfile/dir
-```
-
-Or manually:
-
-```bash
-docker build --platform linux/amd64 -t YOUR_HOSTNAME/demo/myimage:latest .
-docker save YOUR_HOSTNAME/demo/myimage:latest | ssh user@YOUR_HOSTNAME 'docker load && docker push YOUR_HOSTNAME/demo/myimage:latest'
-```
-
 ### setup-harbor.sh fixes (same-file cp / ssl_cert error)
 
 - **Install dir** is always `$SCRIPT_DIR/harbor-install` so extract tree is not confused with `harbor.yml` in the repo.
