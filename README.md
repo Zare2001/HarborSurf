@@ -8,7 +8,7 @@ Minimal files to deploy a Harbor Docker registry on a server.
 - `setup-harbor.sh`: Shell script to run the installer directly on the server.
 - `templates/harbor.yml.j2`: Jinja template used by the playbook to generate `harbor.yml`.
 
-### 1. SSH / inventory (same pattern as Vantage6)
+### 1. SSH / inventory
 
 First, make sure you can SSH into the server manually. For example:
 
